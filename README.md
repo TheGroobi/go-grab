@@ -1,4 +1,4 @@
-# go-downloader
+# go-grab
 
 ### The Plan
 
