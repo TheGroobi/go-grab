@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"github.com/TheGroobi/go-grab/cmd"
+)
 
 func main() {
-	fmt.Println("Compiled correctly")
+	cmd.Execute()
 }

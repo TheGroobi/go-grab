@@ -1,5 +1,5 @@
 compile: 
-	go build -o bin/output.exe .
+	go build -o bin/go-grab.exe .
 
 run: compile
-	./bin/output.exe
+	./bin/go-grab.exe
