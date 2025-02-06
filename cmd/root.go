@@ -9,6 +9,11 @@ import (
 
 const Version string = "0.0.1"
 
+var (
+	FileChunk        int = 1024 // 1MB
+	AutoDetectChunks bool
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "go-grab [command]",
 	Short: "go-grab is a cli tool for retrieveing files using HTTP, HTTPS",
@@ -19,8 +24,9 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(downloadCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(downloadCmd)
+	downloadCmd.Flags().IntVarP(&FileChunk, "chunk-size", "c", FileChunk, "chunk size for download")
 }
 
 func Execute() {
