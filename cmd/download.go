@@ -3,8 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 
 	validator "github.com/TheGroobi/go-grab/pkg/utils"
@@ -29,10 +32,10 @@ var downloadCmd = &cobra.Command{
 }
 
 type Chunk struct {
+	Bytes []byte
 	Index int
 	Start int
 	End   int
-	Bytes []byte
 }
 
 func downloadFile(cmd *cobra.Command, args []string) {
@@ -58,9 +61,9 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	chunks := make([]Chunk, totalFileChunks)
 	for i := range chunks {
 		if i+1 == len(chunks) {
-			chunks[i] = *downloadChunk(url, i, int(fileSize))
+			downloadChunk(url, i, int(fileSize))
 		} else {
-			chunks[i] = *downloadChunk(url, i, FileChunk)
+			downloadChunk(url, i, FileChunk)
 		}
 	}
 
@@ -88,23 +91,53 @@ func getFileSize(url string) (int64, error) {
 		return 0, fmt.Errorf("invalid Content-Length")
 	}
 
+	fmt.Println(r)
+
 	return size, nil
 }
 
 func downloadChunk(url string, i, chunkSize int) *Chunk {
 	// request range with bytes
-	c := Chunk{Index: i, Start: chunkSize * i, End: chunkSize * (i + 1)}
-	r, err := http.Get(url)
+	c := &Chunk{Index: i, Start: chunkSize * i, End: chunkSize * (i + 1)}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Println("Error: Couldn't create a download request")
+		return nil
+	}
+
+	req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", FileChunk*i, FileChunk*(i+1)))
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Printf("Error: Couldn't download chunk: %d\n", i)
 		return nil
 	}
 
-	defer r.Body.Close()
+	defer resp.Body.Close()
 
-	r.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", FileChunk*i, FileChunk*(i+1)))
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Error: Couldn't read the response body")
+		return nil
+	}
 
-	b := r.Request.Body
-	fmt.Println("Body of request", b)
-	return &c
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error: Couldn't get home directory")
+		return nil
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s/downloaded.png", homeDir))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if _, err := f.Write(b); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := f.Close(); err != nil {
+		log.Fatal(err)
+	}
+
+	return c
 }
