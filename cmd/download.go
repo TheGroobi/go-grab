@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/TheGroobi/go-grab/pkg/files"
-	"github.com/TheGroobi/go-grab/pkg/validators/validators"
+	"github.com/TheGroobi/go-grab/pkg/validators"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +73,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
 
-	f, err := createFile(OutputDir, fi.Name, fi.Ext)
+	f, err := createFile(strings.TrimSuffix(OutputDir, "/"), fi.Name, fi.Ext)
 
 	var chunks []*Chunk
 	for i := 0; i < totalFileChunks; i++ {
@@ -212,7 +212,7 @@ func getDownloadsDir() string {
 }
 
 func createFile(outDir, name, ext string) (*os.File, error) {
-	o := fmt.Sprintf("%s/%s%s", outDir, name, ext)
+	o := fmt.Sprintf("%s/%s.%s", outDir, name, ext)
 	return os.Create(o)
 }
 
