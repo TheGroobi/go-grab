@@ -10,8 +10,9 @@ import (
 const Version string = "0.0.1"
 
 var (
-	FileChunk        int = 1024 // 1MB
+	ChunkSize        int = 1024 // 1MB
 	AutoDetectChunks bool
+	OutputDir        string
 )
 
 var rootCmd = &cobra.Command{
@@ -26,7 +27,8 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(downloadCmd)
-	downloadCmd.Flags().IntVarP(&FileChunk, "chunk-size", "c", FileChunk, "chunk size for download")
+	downloadCmd.Flags().IntVarP(&ChunkSize, "chunk-size", "c", ChunkSize, "chunk size for download")
+	downloadCmd.Flags().StringVarP(&OutputDir, "output", "o", getDownloadsDir(), "directory where the file should be downloaded to, defaults to '$HOME/downlods'")
 }
 
 func Execute() {
