@@ -45,6 +45,11 @@ type FileHandler interface {
 	GetFullPath(outDir string) string
 }
 
+type ChunkHandler interface {
+	Download(url string) (*Chunk, error)
+	WriteToFile(f *os.File)
+}
+
 type Chunk struct {
 	Data  []byte
 	Start int
@@ -70,7 +75,6 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	fi, err := getFileInfo(url)
 	if err != nil {
 		fmt.Println("Error: Failed to get file size from:", url)
-		return
 	}
 	fmt.Printf("File size: %d\n", fi.Size)
 
@@ -79,9 +83,14 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
 
 	f, err := fi.CreateFile(strings.TrimSuffix(OutputDir, "/"))
+	if err != nil {
+		log.Fatal("Error: failed to create a file", err)
+	}
 
-	var chunks []*Chunk
-	for i := 0; i < totalFileChunks; i++ {
+	defer f.Close()
+
+	chunks := make([]*Chunk, totalFileChunks)
+	for i := range chunks {
 		chunkStart := i * ChunkSize
 		chunkEnd := chunkStart + ChunkSize - 1
 
@@ -91,26 +100,31 @@ func downloadFile(cmd *cobra.Command, args []string) {
 			chunkStart = 0
 		}
 
-		var chunk *Chunk
-		var err error
+		c := &Chunk{Start: chunkStart, End: chunkEnd}
+
 		maxRetries := 3
 		for r := 0; r < maxRetries; r++ {
-			chunk, err = downloadChunk(url, chunkStart, chunkEnd)
-			if err == nil {
+			err = c.Download(url)
+			if err == nil && c.Data != nil {
 				break
 			}
 
 			log.Printf("Failed to download chunk %d (attempt %d/%d): %v\n", i, r+1, maxRetries, err)
 			time.Sleep(2 * time.Second)
 		}
+		if c.Data == nil || len(c.Data) == 0 {
+			log.Fatalf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
+		}
 
-		fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, chunk.Start, chunk.End)
-		chunks = append(chunks, chunk)
+		err := c.WriteToFile(f)
+		if err != nil {
+			log.Fatal("Failed to write to file: ", err)
+		}
+
+		fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
 	}
 
 	fmt.Printf("File chunks downloaded\n Missed Chunks - | %d |", len(chunks)-totalFileChunks)
-
-	mergeChunks(chunks, f)
 }
 
 func getFileInfo(url string) (*FileInfo, error) {
@@ -145,8 +159,8 @@ func getFileInfo(url string) (*FileInfo, error) {
 	cd := r.Header.Get("Content-Disposition")
 	regex := regexp.MustCompile(`filename="([^"]+)"`)
 
-	if filename := regex.Find([]byte(cd)); filename != nil {
-		fn := strings.Split(string(filename), ".")
+	if filename := regex.FindStringSubmatch(cd); filename != nil {
+		fn := strings.Split(string(filename[1]), ".")
 		f.Name = fn[0]
 
 		if len(fn) > 1 {
@@ -167,31 +181,29 @@ func getFileInfo(url string) (*FileInfo, error) {
 	return f, nil
 }
 
-func downloadChunk(url string, start, end int) (*Chunk, error) {
-	// request range with bytes
-	c := &Chunk{Start: start, End: end}
+func (c *Chunk) Download(url string) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Error: Couldn't create a download request")
+		return fmt.Errorf("Error: Couldn't create a download request")
 	}
 
-	req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", c.Start, c.End))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Error: Failed to connect to the HTTP client")
+		return fmt.Errorf("Error: Failed to connect to the HTTP client")
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", resp.StatusCode)
+		return fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", resp.StatusCode)
 	}
 
 	defer resp.Body.Close()
 
 	c.Data, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("Error: Couldn't read the response body")
+		return err
 	}
 
-	return c, nil
+	return nil
 }
 
 func getDownloadsDir() string {
@@ -225,20 +237,18 @@ func (f *FileInfo) CreateFile(outDir string) (*os.File, error) {
 	return os.Create(o)
 }
 
-func mergeChunks(chunks []*Chunk, f *os.File) {
-	defer f.Close()
+func (c *Chunk) WriteToFile(f *os.File) error {
+	if c == nil || c.Data == nil {
+		return errors.New("Chunk is nil or has no data")
+	}
 
-	fmt.Println("Merging chunks")
-	for i, c := range chunks {
-		if _, err := f.Write(c.Data); err != nil {
-			log.Fatalf("Failed to write chunk %d to file: %v", i, err)
-		}
+	if _, err := f.Write(c.Data); err != nil {
+		return err
 	}
 
 	filePath := f.Name()
 
-	if _, err := os.Stat(filePath); err != nil {
-		log.Fatal("Failed to save file")
-	}
-	fmt.Printf("File successfully downloaded and saved at %s\n", filePath)
+	_, err := os.Stat(filePath)
+
+	return err
 }
