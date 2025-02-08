@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -13,6 +14,7 @@ var (
 	ChunkSizeMB      int = 1 // 1MB
 	AutoDetectChunks bool
 	OutputDir        string
+	Workers          int
 )
 
 var rootCmd = &cobra.Command{
@@ -27,8 +29,10 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(downloadCmd)
+	rootCmd.AddCommand(workerCmd)
 	downloadCmd.Flags().IntVarP(&ChunkSizeMB, "chunk-size", "c", ChunkSizeMB, "chunk size for download in mb")
-	downloadCmd.Flags().StringVarP(&OutputDir, "output", "o", getDownloadsDir(), "directory where the file should be downloaded to, defaults to '$HOME/downlods'")
+	downloadCmd.Flags().StringVarP(&OutputDir, "output", "o", getDownloadsDir(), "directory where the file should be downloaded to, defaults to '$HOME/Downloads'")
+	workerCmd.Flags().IntVarP(&Workers, "workers", "w", runtime.NumCPU(), "How many workers to run your tasks, defaults to number of threads on your pc")
 }
 
 func Execute() {

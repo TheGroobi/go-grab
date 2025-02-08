@@ -169,7 +169,7 @@ func (fi *FileInfo) DownloadInChunks(url string, chunkSize float64) {
 		fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
 	}
 
-	fmt.Printf("Chunks downloaded\nMissed Chunks -  %d ", len(chunks)-totalFileChunks)
+	fmt.Printf("Chunks downloaded\nMissed Chunks: %d\n", len(chunks)-totalFileChunks)
 }
 
 func getFileInfo(url string) (*FileInfo, error) {
@@ -288,13 +288,18 @@ func (c *Chunk) WriteToFile(f *os.File) error {
 		return errors.New("Chunk is nil or has no data")
 	}
 
+	_, err := f.Seek(int64(c.Start), 0)
+	if err != nil {
+		return errors.New("Couldn't move offset of the file")
+	}
+
 	if _, err := f.Write(c.Data); err != nil {
 		return err
 	}
 
 	filePath := f.Name()
 
-	_, err := os.Stat(filePath)
+	_, err = os.Stat(filePath)
 
 	return err
 }
