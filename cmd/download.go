@@ -37,16 +37,18 @@ var (
 		Run: downloadFile,
 	}
 
-	DownloadDirNames []string = []string{"Downloads", "downloads", "download", "Downloads", "Pobrane"}
+	DownloadDirNames     []string = []string{"Downloads", "downloads", "download", "Downloads", "Pobrane"}
+	ErrRangeNotSupported          = errors.New("Range not supported, disable chunking download")
 )
 
-type FileHandler interface {
-	CreateFile(outDir string) (*os.File, error)
+type FileInfoHandler interface {
+	CreateFile(outDir string) error
 	GetFullPath(outDir string) string
+	DownloadInChunks(fi *FileInfo, url string)
 }
 
 type ChunkHandler interface {
-	Download(url string) (*Chunk, error)
+	Download(url string) error
 	WriteToFile(f *os.File)
 }
 
@@ -57,15 +59,16 @@ type Chunk struct {
 }
 
 type FileInfo struct {
-	Dir  string
-	Name string
-	Ext  string
-	Size int64
+	File          *os.File
+	Dir           string
+	Name          string
+	Ext           string
+	Size          int64
+	AcceptsRanges bool
 }
 
 func downloadFile(cmd *cobra.Command, args []string) {
 	url := args[0]
-
 	_, err := http.Get(url)
 	if err != nil {
 		fmt.Println("Error: Failed to request: ", url)
@@ -73,26 +76,68 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	}
 
 	fi, err := getFileInfo(url)
-	if err != nil {
-		fmt.Println("Error: Failed to get file size from:", url)
+	if err != nil && err != ErrRangeNotSupported {
+		fmt.Println("Error: Failed to get file info from:", url)
 	}
-	fmt.Printf("File size: %d\n", fi.Size)
 
-	totalFileChunks := int(math.Ceil(float64(fi.Size) / float64(ChunkSize)))
-
-	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
-
-	f, err := fi.CreateFile(strings.TrimSuffix(OutputDir, "/"))
+	err = fi.CreateFile(OutputDir)
 	if err != nil {
 		log.Fatal("Error: failed to create a file", err)
 	}
 
-	defer f.Close()
+	if fi.AcceptsRanges {
+
+		chunkSize := float64(64 * 1024) // Default 64kb if no head size response
+		if fi.Size > 0 {
+			chunkSize = float64(ChunkSizeMB) * (1 << 20)
+		}
+
+		fi.DownloadInChunks(url, chunkSize)
+	} else {
+		maxRetries := 3
+
+		for r := 0; r < maxRetries; r++ {
+			bytesWritten, err := fi.StreamBufInChunks(url)
+			if err == nil && bytesWritten != 0 {
+				break
+			}
+
+			log.Printf("Failed to write bytes %d (attempt %d/%d): %v\n", bytesWritten, r+1, maxRetries, err)
+			time.Sleep(2 * time.Second)
+		}
+	}
+
+	defer fi.File.Close()
+
+	fmt.Println("File downloaded Successfully and saved in ", fi.GetFullPath(OutputDir))
+}
+
+func (fi *FileInfo) StreamBufInChunks(url string) (int64, error) {
+	r, err := http.Get(url)
+	if err != nil {
+		return 0, fmt.Errorf("Error: Failed to connect to the HTTP client")
+	}
+
+	if r.StatusCode >= 400 {
+		return 0, fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", r.StatusCode)
+	}
+
+	defer r.Body.Close()
+
+	return io.Copy(fi.File, r.Body)
+}
+
+func (fi *FileInfo) DownloadInChunks(url string, chunkSize float64) {
+	totalFileChunks := int(math.Ceil(float64(fi.Size) / chunkSize))
+
+	fmt.Printf("File size: %d\n", fi.Size)
+	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
 
 	chunks := make([]*Chunk, totalFileChunks)
+
 	for i := range chunks {
-		chunkStart := i * ChunkSize
-		chunkEnd := chunkStart + ChunkSize - 1
+		chunkStart := i * int(chunkSize)
+		chunkEnd := chunkStart + int(chunkSize) - 1
 
 		if chunkEnd >= int(fi.Size) {
 			chunkEnd = int(fi.Size - 1)
@@ -104,7 +149,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 		maxRetries := 3
 		for r := 0; r < maxRetries; r++ {
-			err = c.Download(url)
+			err := c.Download(url)
 			if err == nil && c.Data != nil {
 				break
 			}
@@ -116,7 +161,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 			log.Fatalf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
 		}
 
-		err := c.WriteToFile(f)
+		err := c.WriteToFile(fi.File)
 		if err != nil {
 			log.Fatal("Failed to write to file: ", err)
 		}
@@ -124,11 +169,16 @@ func downloadFile(cmd *cobra.Command, args []string) {
 		fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
 	}
 
-	fmt.Printf("File chunks downloaded\n Missed Chunks - | %d |", len(chunks)-totalFileChunks)
+	fmt.Printf("Chunks downloaded\nMissed Chunks -  %d ", len(chunks)-totalFileChunks)
 }
 
 func getFileInfo(url string) (*FileInfo, error) {
-	f := &FileInfo{}
+	f := &FileInfo{
+		Name:          "download",
+		Ext:           ".part",
+		Size:          0,
+		AcceptsRanges: true,
+	}
 
 	r, err := http.Head(url)
 	if err != nil {
@@ -150,32 +200,24 @@ func getFileInfo(url string) (*FileInfo, error) {
 
 	defer r.Body.Close()
 
-	if r.Header.Get("Accept-Ranges") != "bytes" {
-		return nil, fmt.Errorf("Error: Server does not support range requests")
-	}
-
-	f.Name = "download"
-
 	cd := r.Header.Get("Content-Disposition")
 	regex := regexp.MustCompile(`filename="([^"]+)"`)
+	fmt.Println(cd)
 
 	if filename := regex.FindStringSubmatch(cd); filename != nil {
-		fn := strings.Split(string(filename[1]), ".")
-		f.Name = fn[0]
-
-		if len(fn) > 1 {
-			f.Ext = fn[1]
-		}
+		f.Name, _ = splitLastDot(string(filename[1]))
 	}
 
-	if f.Ext == "" {
-		ct := r.Header.Get("Content-Type")
-		f.Ext = files.GetFileExtension(ct)
+	ct := r.Header.Get("Content-Type")
+	f.Ext = files.GetFileExtension(ct)
+
+	if s, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
+		f.Size = s
 	}
 
-	f.Size, err = strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid Content-Length")
+	if r.Header.Get("Accept-Ranges") != "bytes" {
+		f.AcceptsRanges = false
+		return f, ErrRangeNotSupported
 	}
 
 	return f, nil
@@ -232,9 +274,13 @@ func (f *FileInfo) GetFullPath(outDir string) string {
 	return fmt.Sprintf("%s/%s.%s", strings.TrimSuffix(outDir, "/"), f.Name, f.Ext)
 }
 
-func (f *FileInfo) CreateFile(outDir string) (*os.File, error) {
+func (f *FileInfo) CreateFile(outDir string) error {
 	o := f.GetFullPath(outDir)
-	return os.Create(o)
+
+	file, err := os.Create(o)
+	f.File = file
+
+	return err
 }
 
 func (c *Chunk) WriteToFile(f *os.File) error {
@@ -251,4 +297,13 @@ func (c *Chunk) WriteToFile(f *os.File) error {
 	_, err := os.Stat(filePath)
 
 	return err
+}
+
+func splitLastDot(s string) (string, string) {
+	index := strings.LastIndex(s, ".")
+	if index == -1 {
+		return s, ""
+	}
+
+	return s[:index], s[index+1:]
 }
