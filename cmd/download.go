@@ -40,6 +40,11 @@ var (
 	DownloadDirNames []string = []string{"Downloads", "downloads", "download", "Downloads", "Pobrane"}
 )
 
+type FileHandler interface {
+	CreateFile(outDir string) (*os.File, error)
+	GetFullPath(outDir string) string
+}
+
 type Chunk struct {
 	Data  []byte
 	Start int
@@ -73,7 +78,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
 
-	f, err := createFile(strings.TrimSuffix(OutputDir, "/"), fi.Name, fi.Ext)
+	f, err := fi.CreateFile(strings.TrimSuffix(OutputDir, "/"))
 
 	var chunks []*Chunk
 	for i := 0; i < totalFileChunks; i++ {
@@ -90,7 +95,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 		var err error
 		maxRetries := 3
 		for r := 0; r < maxRetries; r++ {
-			chunk, err = downloadChunk(url, i, chunkStart, chunkEnd)
+			chunk, err = downloadChunk(url, chunkStart, chunkEnd)
 			if err == nil {
 				break
 			}
@@ -138,9 +143,9 @@ func getFileInfo(url string) (*FileInfo, error) {
 	f.Name = "download"
 
 	cd := r.Header.Get("Content-Disposition")
-	regexp := regexp.MustCompile(`/filename="([^"]+)"/gm`)
+	regex := regexp.MustCompile(`filename="([^"]+)"`)
 
-	if filename := regexp.Find([]byte(cd)); filename != nil {
+	if filename := regex.Find([]byte(cd)); filename != nil {
 		fn := strings.Split(string(filename), ".")
 		f.Name = fn[0]
 
@@ -162,7 +167,7 @@ func getFileInfo(url string) (*FileInfo, error) {
 	return f, nil
 }
 
-func downloadChunk(url string, i, start, end int) (*Chunk, error) {
+func downloadChunk(url string, start, end int) (*Chunk, error) {
 	// request range with bytes
 	c := &Chunk{Start: start, End: end}
 	req, err := http.NewRequest("GET", url, nil)
@@ -211,8 +216,12 @@ func getDownloadsDir() string {
 	return downloadDir
 }
 
-func createFile(outDir, name, ext string) (*os.File, error) {
-	o := fmt.Sprintf("%s/%s.%s", outDir, name, ext)
+func (f *FileInfo) GetFullPath(outDir string) string {
+	return fmt.Sprintf("%s/%s.%s", strings.TrimSuffix(outDir, "/"), f.Name, f.Ext)
+}
+
+func (f *FileInfo) CreateFile(outDir string) (*os.File, error) {
+	o := f.GetFullPath(outDir)
 	return os.Create(o)
 }
 
