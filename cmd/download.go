@@ -16,6 +16,7 @@ import (
 
 	"github.com/TheGroobi/go-grab/pkg/files"
 	"github.com/TheGroobi/go-grab/pkg/validators"
+	"github.com/TheGroobi/go-grab/pkg/workers"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +57,7 @@ type Chunk struct {
 	Data  []byte
 	Start int
 	End   int
+	Index int
 }
 
 type FileInfo struct {
@@ -64,6 +66,7 @@ type FileInfo struct {
 	Name          string
 	Ext           string
 	Size          int64
+	ChunkSize     float64
 	AcceptsRanges bool
 }
 
@@ -87,12 +90,12 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	if fi.AcceptsRanges {
 
-		chunkSize := float64(64 * 1024) // Default 64kb if no head size response
+		fi.ChunkSize = float64(64 * 1024) // Default 64kb if no head size response
 		if fi.Size > 0 {
-			chunkSize = float64(ChunkSizeMB) * (1 << 20)
+			fi.ChunkSize = float64(ChunkSizeMB) * (1 << 20)
 		}
 
-		fi.DownloadInChunks(url, chunkSize)
+		fi.DownloadInChunks(url)
 	} else {
 		maxRetries := 3
 
@@ -127,49 +130,55 @@ func (fi *FileInfo) StreamBufInChunks(url string) (int64, error) {
 	return io.Copy(fi.File, r.Body)
 }
 
-func (fi *FileInfo) DownloadInChunks(url string, chunkSize float64) {
-	totalFileChunks := int(math.Ceil(float64(fi.Size) / chunkSize))
+func (fi *FileInfo) DownloadInChunks(url string) int {
+	totalFileChunks := int(math.Ceil(float64(fi.Size) / fi.ChunkSize))
 
 	fmt.Printf("File size: %d\n", fi.Size)
 	fmt.Printf("Splitting download into %d chunks.\n", totalFileChunks)
 
 	chunks := make([]*Chunk, totalFileChunks)
+	tasks := make([]workers.Task, totalFileChunks)
 
-	for i := range chunks {
-		chunkStart := i * int(chunkSize)
-		chunkEnd := chunkStart + int(chunkSize) - 1
-
-		if chunkEnd >= int(fi.Size) {
-			chunkEnd = int(fi.Size - 1)
-		} else if i == 0 {
-			chunkStart = 0
-		}
-
-		c := &Chunk{Start: chunkStart, End: chunkEnd}
-
-		maxRetries := 3
-		for r := 0; r < maxRetries; r++ {
-			err := c.Download(url)
-			if err == nil && c.Data != nil {
-				break
-			}
-
-			log.Printf("Failed to download chunk %d (attempt %d/%d): %v\n", i, r+1, maxRetries, err)
-			time.Sleep(2 * time.Second)
-		}
-		if c.Data == nil || len(c.Data) == 0 {
-			log.Fatalf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
-		}
-
-		err := c.WriteToFile(fi.File)
-		if err != nil {
-			log.Fatal("Failed to write to file: ", err)
-		}
-
-		fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
+	for i := 0; i < len(tasks); i++ {
+		tasks[i] = workers.Task{ID: i + 1, ExecFunc: func() {
+			fi.DownloadChunk(i, url)
+		}}
 	}
 
-	fmt.Printf("Chunks downloaded\nMissed Chunks: %d\n", len(chunks)-totalFileChunks)
+	wp := workers.WorkerPool{
+		Tasks:       tasks,
+		Concurrency: len(tasks),
+	}
+
+	wp.Run()
+
+	return len(chunks) - totalFileChunks
+}
+
+func (fi *FileInfo) DownloadChunk(i int, url string) {
+	c := &Chunk{Index: i}
+
+	maxRetries := 3
+	for r := 0; r < maxRetries; r++ {
+		err := c.Download(url, fi.ChunkSize, fi.Size)
+		if err == nil && c.Data != nil {
+			break
+		}
+
+		log.Printf("Failed to download chunk %d (attempt %d/%d): %v\n", i, r+1, maxRetries, err)
+		time.Sleep(2 * time.Second)
+	}
+
+	if c.Data == nil || len(c.Data) == 0 {
+		log.Fatalf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
+	}
+
+	err := c.WriteToFile(fi.File)
+	if err != nil {
+		log.Fatal("Failed to write to file: ", err)
+	}
+
+	fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
 }
 
 func getFileInfo(url string) (*FileInfo, error) {
@@ -223,7 +232,18 @@ func getFileInfo(url string) (*FileInfo, error) {
 	return f, nil
 }
 
-func (c *Chunk) Download(url string) error {
+func (c *Chunk) Download(url string, chunkSize float64, size int64) error {
+	c.Start = c.Index * int(chunkSize)
+	c.End = c.Start + int(chunkSize) - 1
+
+	if c.End >= int(size) {
+		c.End = int(size - 1)
+	} else if c.Index == 0 {
+		c.Start = 0
+	}
+
+	fmt.Printf("Downloading chunk %d: with byte range %d-%d\n", c.Index, c.Start, c.End)
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("Error: Couldn't create a download request")
