@@ -71,6 +71,8 @@ type FileInfo struct {
 }
 
 func downloadFile(cmd *cobra.Command, args []string) {
+	t := time.Now()
+
 	url := args[0]
 	_, err := http.Get(url)
 	if err != nil {
@@ -113,6 +115,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	defer fi.File.Close()
 
 	fmt.Println("File downloaded Successfully and saved in ", fi.GetFullPath(OutputDir))
+	fmt.Printf("Download took %v\n", time.Since(t))
 }
 
 func (fi *FileInfo) StreamBufInChunks(url string) (int64, error) {
