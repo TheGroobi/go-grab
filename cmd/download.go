@@ -82,7 +82,8 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	fi, err := getFileInfo(url)
 	if err != nil && err != ErrRangeNotSupported {
-		fmt.Println("Error: Failed to get file info from:", url)
+		fmt.Println("Error: Failed to get file info from:", url, err)
+		panic(*fi)
 	}
 
 	err = fi.CreateFile(OutputDir)
@@ -193,43 +194,43 @@ func getFileInfo(url string) (*FileInfo, error) {
 	}
 
 	r, err := http.Head(url)
-	if err != nil {
+	if err != nil || r.StatusCode != http.StatusOK {
+
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, fmt.Errorf("Error: Couldn't create a download request")
 		}
 
 		r, err = http.DefaultClient.Do(req)
-	}
 
-	if err != nil {
-		return nil, fmt.Errorf("Error: Failed to request: \n%s", url)
-	}
+		if r.StatusCode >= 400 {
+			return nil, fmt.Errorf("Error: Server responded with: %d\n", r.StatusCode)
+		}
 
-	if r.StatusCode >= 400 {
-		return nil, fmt.Errorf("Error: Server responded with: %d\n", r.StatusCode)
-	}
+		defer r.Body.Close()
 
-	defer r.Body.Close()
+		cd := r.Header.Get("Content-Disposition")
+		regex := regexp.MustCompile(`filename="([^"]+)"`)
+		fmt.Println(cd)
 
-	cd := r.Header.Get("Content-Disposition")
-	regex := regexp.MustCompile(`filename="([^"]+)"`)
-	fmt.Println(cd)
+		if filename := regex.FindStringSubmatch(cd); filename != nil {
+			f.Name, _ = splitLastDot(string(filename[1]))
+		}
 
-	if filename := regex.FindStringSubmatch(cd); filename != nil {
-		f.Name, _ = splitLastDot(string(filename[1]))
-	}
+		ct := r.Header.Get("Content-Type")
+		if ct != "" {
+			f.Ext = files.GetFileExtension(ct)
+		}
 
-	ct := r.Header.Get("Content-Type")
-	f.Ext = files.GetFileExtension(ct)
+		if s, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
+			f.Size = s
+		}
 
-	if s, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
-		f.Size = s
-	}
+		if r.Header.Get("Accept-Ranges") != "bytes" {
+			f.AcceptsRanges = false
+			return f, ErrRangeNotSupported
+		}
 
-	if r.Header.Get("Accept-Ranges") != "bytes" {
-		f.AcceptsRanges = false
-		return f, ErrRangeNotSupported
 	}
 
 	return f, nil
