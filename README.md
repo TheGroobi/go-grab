@@ -1,22 +1,44 @@
-# go-grab
+# go-grab 🚀
 
-### The Plan
+A fast and powerful CLI file downloader for HTTP/HTTPS, inspired by [wget](https://www.gnu.org/software/wget/), built in Go with [cobra](https://cobra.dev/).
 
-#### Concurrent File Downloader
+Supports parallel downloads, chunk-based downloading, and automatic output directory selection.
 
-- Split large files into chunks and download them concurrently.
+####
 
-  - Determine how many cores does a user have and split the file into that number of chunks (or figure out the most optimal size of a chunk for download)
-  - then download them with max core power
+### Commands
 
-- Use goroutines, worker pools, and channels.
+`go-grab grab [URL]`
 
-- Implement retry logic and download resumption.
+As the name suggests grabs the file from the url provided
 
-- Make a cli from it (similiar to wget)
+If the server accepts range requests and provides content-length the chunk can be specified with the `-c --chunk-size flag`,
+and chunked parallel download will be possible boosting the download speed. Otherwise file will be streamed,
+directly from the response body in small buffers to the file
 
-##### **Optional**
+##### Flags
 
-- Implement mini front-end for providing files to download, either from file (drag & drop)
-  - Or a link
+- Custom output directory with `-o --output`
+  Default is:
 
+  - Windows: %USERPROFILE%/Downloads
+
+  - Linux/Unix: $HOME/Downloads
+
+- Chunk size `-c --chunk-size` in MB (default to 1MB)
+
+`go-grab version`
+
+Display the version of go-grab
+
+`go-grab help`
+
+Provides information on how to use the CLI tool
+
+`go-grab completion`
+
+Generates the autocompletion script for the specified shell
+
+### Open-Source Licensing
+
+This project is licensed under the MIT License. See the LICENSE file for details.
