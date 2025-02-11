@@ -8,7 +8,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -39,8 +38,7 @@ var (
 		Run: downloadFile,
 	}
 
-	DownloadDirNames     []string = []string{"Downloads", "downloads", "download", "Downloads", "Pobrane"}
-	ErrRangeNotSupported          = errors.New("Range not supported, disable chunking download")
+	ErrRangeNotSupported = errors.New("Range not supported, disable chunking download")
 )
 
 type FileInfoHandler interface {
@@ -74,6 +72,10 @@ type FileInfo struct {
 func downloadFile(cmd *cobra.Command, args []string) {
 	t := time.Now()
 
+	if OutputDir == files.GetDownloadsDir() {
+		fmt.Println("Output directory not provided defaulting to ", strings.ReplaceAll(OutputDir, "\\", "/"))
+	}
+
 	url := args[0]
 
 	fi, err := getFileInfo(url)
@@ -104,7 +106,7 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	defer fi.File.Close()
 
-	fmt.Println("File downloaded Successfully and saved in ", fi.GetFullPath(OutputDir))
+	fmt.Println("File downloaded Successfully and saved in ", strings.ReplaceAll(fi.GetFullPath(OutputDir), "\\", "/"))
 	fmt.Printf("Download took %v\n", time.Since(t))
 }
 
@@ -117,6 +119,10 @@ func (fi *FileInfo) StreamBufInChunks(url string) (int64, error) {
 	if r.StatusCode >= 400 {
 		return 0, fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", r.StatusCode)
 	}
+
+	fmt.Printf("Server responded with: %d\n", r.StatusCode)
+	fmt.Println("Chunking not possible streaming the data instead")
+	fmt.Println("Download started...")
 
 	defer r.Body.Close()
 
@@ -257,28 +263,6 @@ func (c *Chunk) Download(url string, chunkSize float64, size int64) error {
 	}
 
 	return nil
-}
-
-func getDownloadsDir() string {
-	var downloadDir string
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, ddn := range DownloadDirNames {
-		dir := filepath.Join(homeDir, ddn)
-
-		if _, err := os.Stat(dir); err == nil {
-			downloadDir = dir
-			break
-		} else {
-			downloadDir = homeDir
-		}
-	}
-
-	return downloadDir
 }
 
 func (f *FileInfo) GetFullPath(outDir string) string {

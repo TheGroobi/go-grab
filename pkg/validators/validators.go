@@ -2,11 +2,9 @@ package validators
 
 import (
 	"net/url"
-	"strings"
 )
 
 func URL(link string) bool {
-	l := strings.TrimPrefix(link, "blob:")
-	parsedURL, err := url.ParseRequestURI(l)
+	parsedURL, err := url.ParseRequestURI(link)
 	return err == nil && parsedURL.Scheme != "" && parsedURL.Host != ""
 }
