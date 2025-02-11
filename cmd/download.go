@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -74,32 +75,17 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	t := time.Now()
 
 	url := args[0]
-	_, err := http.Get(url)
-	if err != nil {
-		fmt.Println("Error: Failed to request: ", url)
-		log.Fatal(err)
-	}
 
 	fi, err := getFileInfo(url)
 	if err != nil && err != ErrRangeNotSupported {
 		fmt.Println("Error: Failed to get file info from:", url, err)
-		panic(*fi)
 	}
-
 	err = fi.CreateFile(OutputDir)
 	if err != nil {
 		log.Fatal("Error: failed to create a file", err)
 	}
 
-	if fi.AcceptsRanges {
-
-		fi.ChunkSize = float64(64 * 1024) // Default 64kb if no head size response
-		if fi.Size > 0 {
-			fi.ChunkSize = float64(ChunkSizeMB) * (1 << 20)
-		}
-
-		fi.DownloadInChunks(url)
-	} else {
+	if fi.Size <= 0 {
 		maxRetries := 3
 
 		for r := 0; r < maxRetries; r++ {
@@ -111,6 +97,9 @@ func downloadFile(cmd *cobra.Command, args []string) {
 			log.Printf("Failed to write bytes %d (attempt %d/%d): %v\n", bytesWritten, r+1, maxRetries, err)
 			time.Sleep(2 * time.Second)
 		}
+	} else if fi.AcceptsRanges {
+		fi.ChunkSize = float64(ChunkSizeMB) * (1 << 20)
+		fi.DownloadInChunks(url)
 	}
 
 	defer fi.File.Close()
@@ -151,7 +140,7 @@ func (fi *FileInfo) DownloadInChunks(url string) int {
 
 	wp := workers.WorkerPool{
 		Tasks:       tasks,
-		Concurrency: len(tasks),
+		Concurrency: int(math.Max(float64(len(tasks)), float64(runtime.NumCPU()))),
 	}
 
 	wp.Run()
@@ -188,7 +177,7 @@ func (fi *FileInfo) DownloadChunk(i int, url string) {
 func getFileInfo(url string) (*FileInfo, error) {
 	f := &FileInfo{
 		Name:          "download",
-		Ext:           ".part",
+		Ext:           "",
 		Size:          0,
 		AcceptsRanges: true,
 	}
@@ -202,35 +191,33 @@ func getFileInfo(url string) (*FileInfo, error) {
 		}
 
 		r, err = http.DefaultClient.Do(req)
+	}
 
-		if r.StatusCode >= 400 {
-			return nil, fmt.Errorf("Error: Server responded with: %d\n", r.StatusCode)
-		}
+	if r.StatusCode >= 400 {
+		return nil, fmt.Errorf("Error: Server responded with: %d\n", r.StatusCode)
+	}
 
-		defer r.Body.Close()
+	defer r.Body.Close()
 
-		cd := r.Header.Get("Content-Disposition")
-		regex := regexp.MustCompile(`filename="([^"]+)"`)
-		fmt.Println(cd)
+	cd := r.Header.Get("Content-Disposition")
+	regex := regexp.MustCompile(`filename="([^"]+)"`)
+	fmt.Println(cd)
 
-		if filename := regex.FindStringSubmatch(cd); filename != nil {
-			f.Name, _ = splitLastDot(string(filename[1]))
-		}
+	if filename := regex.FindStringSubmatch(cd); filename != nil {
+		f.Name, _ = splitLastDot(string(filename[1]))
+	}
 
-		ct := r.Header.Get("Content-Type")
-		if ct != "" {
-			f.Ext = files.GetFileExtension(ct)
-		}
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		f.Ext = files.GetFileExtension(ct)
+	}
 
-		if s, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
-			f.Size = s
-		}
+	if s, err := strconv.ParseInt(r.Header.Get("Content-Length"), 10, 64); err == nil {
+		f.Size = s
+	}
 
-		if r.Header.Get("Accept-Ranges") != "bytes" {
-			f.AcceptsRanges = false
-			return f, ErrRangeNotSupported
-		}
-
+	if r.Header.Get("Accept-Ranges") != "bytes" {
+		f.AcceptsRanges = false
+		return f, ErrRangeNotSupported
 	}
 
 	return f, nil
@@ -295,7 +282,14 @@ func getDownloadsDir() string {
 }
 
 func (f *FileInfo) GetFullPath(outDir string) string {
-	return fmt.Sprintf("%s/%s.%s", strings.TrimSuffix(outDir, "/"), f.Name, f.Ext)
+	var path string
+	if f.Ext != "" {
+		path = fmt.Sprintf("%s/%s.%s", strings.TrimSuffix(outDir, "/"), f.Name, f.Ext)
+	} else {
+		path = fmt.Sprintf("%s/%s", strings.TrimSuffix(outDir, "/"), f.Name)
+	}
+
+	return path
 }
 
 func (f *FileInfo) CreateFile(outDir string) error {

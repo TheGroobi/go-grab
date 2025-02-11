@@ -1,103 +1,65 @@
 package files
 
-func GetFileExtension(s string) string {
-	switch s {
-	case "image/jpeg":
-		return "jpg"
-	case "image/png":
-		return "png"
-	case "image/gif":
-		return "gif"
-	case "image/webp":
-		return "webp"
-	case "image/bmp":
-		return "bmp"
-	case "image/svg+xml":
-		return "svg"
-	case "image/tiff":
-		return "tiff"
-	case "image/vnd.microsoft.icon":
-		return "ico"
+var MimeToExt = map[string]string{
+	// Images
+	"image/jpeg":               "jpg",
+	"image/png":                "png",
+	"image/gif":                "gif",
+	"image/webp":               "webp",
+	"image/bmp":                "bmp",
+	"image/svg+xml":            "svg",
+	"image/tiff":               "tiff",
+	"image/vnd.microsoft.icon": "ico",
 
 	// Audio
-	case "audio/mpeg":
-		return "mp3"
-	case "audio/wav":
-		return "wav"
-	case "audio/ogg":
-		return "ogg"
-	case "audio/webm":
-		return "webm"
-	case "audio/flac":
-		return "flac"
+	"audio/mpeg": "mp3",
+	"audio/wav":  "wav",
+	"audio/ogg":  "ogg",
+	"audio/webm": "webm",
+	"audio/flac": "flac",
 
 	// Video
-	case "video/mp4":
-		return "mp4"
-	case "video/webm":
-		return "webm"
-	case "video/ogg":
-		return "ogv"
-	case "video/x-msvideo":
-		return "avi"
-	case "video/mpeg":
-		return "mpeg"
+	"video/mp4":       "mp4",
+	"video/x-m4v":     "m4v",
+	"video/webm":      "webm",
+	"video/ogg":       "ogv",
+	"video/x-msvideo": "avi",
+	"video/mpeg":      "mpeg",
 
 	// Documents
-	case "application/pdf":
-		return "pdf"
-	case "application/msword":
-		return "doc"
-	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-		return "docx"
-	case "application/vnd.ms-excel":
-		return "xls"
-	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-		return "xlsx"
-	case "application/vnd.ms-powerpoint":
-		return "ppt"
-	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-		return "pptx"
+	"application/pdf":    "pdf",
+	"application/msword": "doc",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+	"application/vnd.ms-excel": "xls",
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":         "xlsx",
+	"application/vnd.ms-powerpoint":                                             "ppt",
+	"application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
 
 	// Text & Code
-	case "text/plain":
-		return "txt"
-	case "text/html":
-		return "html"
-	case "text/css":
-		return "css"
-	case "text/javascript":
-		return "js"
-	case "application/json":
-		return "json"
-	case "application/xml":
-		return "xml"
-	case "application/x-yaml":
-		return "yaml"
-	case "application/x-sh":
-		return "sh"
-	case "application/x-httpd-php":
-		return "php"
+	"text/plain":              "txt",
+	"text/html":               "html",
+	"text/css":                "css",
+	"text/javascript":         "js",
+	"application/json":        "json",
+	"application/xml":         "xml",
+	"application/x-yaml":      "yaml",
+	"application/x-sh":        "sh",
+	"application/x-httpd-php": "php",
 
 	// Archives & Executables
-	case "application/zip":
-		return "zip"
-	case "application/x-rar-compressed":
-		return "rar"
-	case "application/x-7z-compressed":
-		return "7z"
-	case "application/gzip":
-		return "gz"
-	case "application/x-tar":
-		return "tar"
-	case "application/java-archive":
-		return "jar"
-	case "application/x-msdownload":
-		return "exe"
-	case "application/x-iso9660-image":
-		return "iso"
+	"application/zip":              "zip",
+	"application/x-rar-compressed": "rar",
+	"application/x-7z-compressed":  "7z",
+	"application/gzip":             "gz",
+	"application/x-tar":            "tar",
+	"application/java-archive":     "jar",
+	"application/x-msdownload":     "exe",
+	"application/x-iso9660-image":  "iso",
+}
 
-	default:
-		return "bin"
+func GetFileExtension(mimeType string) string {
+	if ext, exists := MimeToExt[mimeType]; exists {
+		return ext
 	}
+	return "bin" // Default if MIME type not found
 }
