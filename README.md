@@ -42,3 +42,13 @@ Generates the autocompletion script for the specified shell
 ### Open-Source Licensing
 
 This project is licensed under the MIT License. See the LICENSE file for details.
+
+### Download
+
+You can download go-grab and the source code from the [releases](https://github.com/TheGroobi/go-grab/releases/)
+
+#### Side Notes
+
+- This project is still in its early stages of development, and features may change frequently.
+
+- I'm not yet highly experienced in Go, so expect improvements and refinements over time. Contributions and feedback are always welcome!
