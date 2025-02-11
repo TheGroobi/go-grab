@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const Version string = "0.0.1"
+const Version string = "v0.1.0"
 
 var (
 	ChunkSizeMB      int = 1 // 1MB

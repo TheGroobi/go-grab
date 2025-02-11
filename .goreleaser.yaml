@@ -1,0 +1,11 @@
+project_name: go-grab
+builds:
+  - id: go-grab
+    main: ./main.go
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
