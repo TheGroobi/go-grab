@@ -4,9 +4,15 @@ A fast and powerful CLI file downloader for HTTP/HTTPS, inspired by [wget](https
 
 Supports parallel downloads, chunk-based downloading, and automatic output directory selection.
 
-####
+## Table of Contents
 
-### Commands
+- [Commands](#commands)
+  - [Flags](#flags)
+- [Open-Source Licensing](#open-source-licensing)
+- [Download](#download)
+- [Side Notes](#side-notes)
+
+## Commands
 
 `go-grab grab [URL]`
 
@@ -39,16 +45,22 @@ Provides information on how to use the CLI tool
 
 Generates the autocompletion script for the specified shell
 
-### Open-Source Licensing
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
-### Download
+## Download
 
 You can download go-grab and the source code from the [releases](https://github.com/TheGroobi/go-grab/releases/)
 
-#### Side Notes
+Alternatively, you can install go-grab directly using go install:
+
+`go install github.com/TheGroobi/go-grab@latest`
+
+This will fetch the latest version and install it into your Go binary path.
+
+## Side Notes
 
 - This project is still in its early stages of development, and features may change frequently.
 
 - I'm not yet highly experienced in Go, so expect improvements and refinements over time. Contributions and feedback are always welcome!
+
+## Open-Source Licensing
+
+This project is licensed under the MIT License. See the LICENSE file for details.
