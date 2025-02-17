@@ -197,6 +197,9 @@ func getFileInfo(url string) (*FileInfo, error) {
 		}
 
 		r, err = http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("Error: failed to request", err)
+		}
 	}
 
 	if r.StatusCode >= 400 {
@@ -251,6 +254,7 @@ func (c *Chunk) Download(url string, chunkSize float64, size int64) error {
 	if err != nil {
 		return fmt.Errorf("Error: Failed to connect to the HTTP client")
 	}
+
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", resp.StatusCode)
 	}
