@@ -55,12 +55,23 @@ Alternatively, you can install go-grab directly using go install:
 
 This will fetch the latest version and install it into your Go binary path.
 
+## Open-Source Licensing
+
+This project is licensed under the MIT License. See the LICENSE file for details.
+
 ## Side Notes
 
 - This project is still in its early stages of development, and features may change frequently.
 
 - I'm not yet highly experienced in Go, so expect improvements and refinements over time. Contributions and feedback are always welcome!
 
-## Open-Source Licensing
+### Planned features/stuff
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+- [ ] resume functionality for resuming download
+    - Save the download info to metadata/temp file
+    - Resume the download checking the metadata
+- [ ] if the URL provided does not link to anything downloadable, return server http response:
+    - cookies
+    - headers
+    - status code
+    - etc etc
