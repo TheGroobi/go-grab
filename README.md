@@ -27,9 +27,9 @@ directly from the response body in small buffers to the file
 - Custom output directory with `-o --output`
   Default is:
 
-  - Windows: %USERPROFILE%/Downloads
+  - Windows:` %USERPROFILE%/Downloads`
 
-  - Linux/Unix: $HOME/Downloads
+  - Linux/Unix: `$HOME/Downloads`
 
 - Chunk size `-c --chunk-size` in MB (default to 1MB)
 
