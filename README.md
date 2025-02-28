@@ -68,10 +68,15 @@ This project is licensed under the MIT License. See the LICENSE file for details
 ### Planned features/stuff
 
 - [ ] resume functionality for resuming download
-    - Save the download info to metadata/temp file
-    - Resume the download checking the metadata
+  - Save the download info to metadata/temp file
+  - Resume the download checking the metadata
 - [ ] if the URL provided does not link to anything downloadable, return server http response:
-    - cookies
-    - headers
-    - status code
-    - etc etc
+  - cookies
+  - headers
+  - status code
+  - etc etc
+- [ ] if the link provided is a youtube link, download with yt-dlp.
+  - Possible flags:
+    - audio only bool
+    - encoding (ffmpeg)
+    - resolution

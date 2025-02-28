@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,12 +42,6 @@ var (
 	ErrRangeNotSupported = errors.New("Range not supported, disable chunking download")
 )
 
-type FileInfoHandler interface {
-	CreateFile(outDir string) error
-	GetFullPath(outDir string) string
-	DownloadInChunks(fi *FileInfo, url string)
-}
-
 type ChunkHandler interface {
 	Download(url string) error
 	WriteToFile(f *os.File)
@@ -61,12 +56,19 @@ type Chunk struct {
 
 type FileInfo struct {
 	File          *os.File
-	Dir           string
+	Metadata      *FileMetadata
 	Name          string
 	Ext           string
 	Size          int64
 	ChunkSize     float64
 	AcceptsRanges bool
+}
+
+type FileMetadata struct {
+	URL            string  `json:"url"`
+	MissedChunks   []Chunk `json:"missed_chunks"`
+	TotalSize      int64   `json:"total_size"`
+	DownloadedSize int64   `json:"downloaded_size"`
 }
 
 func downloadFile(cmd *cobra.Command, args []string) {
@@ -80,8 +82,9 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	fi, err := getFileInfo(url)
 	if err != nil && err != ErrRangeNotSupported {
-		fmt.Println("Error: Failed to get file info from:", url, err)
+		log.Fatal("Error: Failed to get file info ", err)
 	}
+
 	err = fi.CreateFile(OutputDir)
 	if err != nil {
 		log.Fatal("Error: failed to create a file", err)
@@ -89,8 +92,8 @@ func downloadFile(cmd *cobra.Command, args []string) {
 
 	if fi.Size <= 0 {
 		maxRetries := 3
-
 		for r := 0; r < maxRetries; r++ {
+			r++
 			bytesWritten, err := fi.StreamBufInChunks(url)
 			if err == nil && bytesWritten != 0 {
 				break
@@ -99,9 +102,21 @@ func downloadFile(cmd *cobra.Command, args []string) {
 			log.Printf("Failed to write bytes %d (attempt %d/%d): %v\n", bytesWritten, r+1, maxRetries, err)
 			time.Sleep(2 * time.Second)
 		}
+
 	} else if fi.AcceptsRanges {
 		fi.ChunkSize = float64(ChunkSizeMB) * (1 << 20)
 		fi.DownloadInChunks(url)
+	}
+
+	if len(fi.Metadata.MissedChunks) > 0 {
+		p := fmt.Sprint(fi.GetFullPath(OutputDir), ".meta.json")
+
+		fi.SaveMetaData(fi.Metadata, p)
+		if err != nil {
+			log.Fatal("Failed to save metadata, download has been stopped")
+		}
+
+		defer os.Remove(p)
 	}
 
 	defer fi.File.Close()
@@ -146,7 +161,7 @@ func (fi *FileInfo) DownloadInChunks(url string) int {
 
 	wp := workers.WorkerPool{
 		Tasks:       tasks,
-		Concurrency: int(math.Max(float64(len(tasks)), float64(runtime.NumCPU()))),
+		Concurrency: int(math.Min(float64(len(tasks)), float64(runtime.NumCPU()))),
 	}
 
 	wp.Run()
@@ -169,7 +184,8 @@ func (fi *FileInfo) DownloadChunk(i int, url string) {
 	}
 
 	if c.Data == nil || len(c.Data) == 0 {
-		log.Fatalf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
+		fi.Metadata.MissedChunks = append(fi.Metadata.MissedChunks, *c)
+		log.Printf("Critical Error: Chunk %d is still empty after %d retries!", i, maxRetries)
 	}
 
 	err := c.WriteToFile(fi.File)
@@ -198,7 +214,7 @@ func getFileInfo(url string) (*FileInfo, error) {
 
 		r, err = http.DefaultClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("Error: failed to request", err)
+			return nil, fmt.Errorf("Error: failed to request %s", err)
 		}
 	}
 
@@ -230,6 +246,33 @@ func getFileInfo(url string) (*FileInfo, error) {
 	}
 
 	return f, nil
+}
+
+func (fi *FileInfo) SaveMetaData(d *FileMetadata, path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+
+	return json.NewEncoder(file).Encode(d)
+}
+
+func (fi *FileInfo) ReadMetaData(path string) *FileMetadata {
+	var m *FileMetadata
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&m); err == nil {
+		return m
+	}
+
+	return nil
 }
 
 func (c *Chunk) Download(url string, chunkSize float64, size int64) error {
@@ -285,6 +328,8 @@ func (f *FileInfo) CreateFile(outDir string) error {
 
 	file, err := os.Create(o)
 	f.File = file
+
+	defer file.Close()
 
 	return err
 }

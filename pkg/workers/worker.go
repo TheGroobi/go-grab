@@ -32,7 +32,7 @@ func (wp *WorkerPool) worker() {
 func (wp *WorkerPool) Run() {
 	wp.tasksch = make(chan Task, len(wp.Tasks))
 
-	for range wp.Concurrency {
+	for i := 0; i < wp.Concurrency; i++ {
 		go wp.worker()
 	}
 
