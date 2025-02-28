@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,9 +17,11 @@ import (
 	"time"
 
 	"github.com/TheGroobi/go-grab/pkg/files"
+	"github.com/TheGroobi/go-grab/pkg/throttle"
 	"github.com/TheGroobi/go-grab/pkg/validators"
 	"github.com/TheGroobi/go-grab/pkg/workers"
 	"github.com/spf13/cobra"
+	"golang.org/x/time/rate"
 )
 
 var (
@@ -90,11 +93,14 @@ func downloadFile(cmd *cobra.Command, args []string) {
 		log.Fatal("Error: failed to create a file", err)
 	}
 
-	if fi.Size <= 0 {
+	limiter := throttle.NewLimiter(LimitRateMB)
+
+	// if fi.Size <= 0 {
+	if true {
 		maxRetries := 3
 		for r := 0; r < maxRetries; r++ {
 			r++
-			bytesWritten, err := fi.StreamBufInChunks(url)
+			bytesWritten, err := fi.StreamBufInChunks(url, limiter)
 			if err == nil && bytesWritten != 0 {
 				break
 			}
@@ -125,23 +131,53 @@ func downloadFile(cmd *cobra.Command, args []string) {
 	fmt.Printf("Download took %v\n", time.Since(t))
 }
 
-func (fi *FileInfo) StreamBufInChunks(url string) (int64, error) {
+func (fi *FileInfo) StreamBufInChunks(url string, limiter *rate.Limiter) (int64, error) {
 	r, err := http.Get(url)
 	if err != nil {
 		return 0, fmt.Errorf("Error: Failed to connect to the HTTP client")
 	}
+	defer r.Body.Close()
 
 	if r.StatusCode >= 400 {
 		return 0, fmt.Errorf("Error: Couldn't download chunk\n Server responded with: |%d|", r.StatusCode)
 	}
 
+	defer fi.File.Close()
+
 	fmt.Printf("Server responded with: %d\n", r.StatusCode)
 	fmt.Println("Chunking not possible streaming the data instead")
 	fmt.Println("Download started...")
 
-	defer r.Body.Close()
+	var totalWritten int64
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	return io.Copy(fi.File, r.Body)
+	ctx := context.Background()
+
+	for range ticker.C {
+		rate, err := throttle.ParseLimitRate(LimitRateMB)
+		if err != nil {
+			log.Fatal("Error: limit formatting is wrong")
+		}
+		if err := limiter.WaitN(ctx, rate); err != nil {
+			log.Printf("Rate limit error: %v", err)
+		}
+
+		n, err := io.Copy(fi.File, r.Body)
+		totalWritten += n
+		fmt.Printf("\rDownloaded: %.2f MB", float64(totalWritten)/(1024*1024))
+
+		if err != nil {
+			if err == io.EOF {
+				fmt.Println("\nDownload complete.")
+			} else {
+				fmt.Println("\nError during download:", err)
+			}
+			break
+		}
+	}
+
+	return totalWritten, nil
 }
 
 func (fi *FileInfo) DownloadInChunks(url string) int {
@@ -153,9 +189,15 @@ func (fi *FileInfo) DownloadInChunks(url string) int {
 	chunks := make([]*Chunk, totalFileChunks)
 	tasks := make([]workers.Task, totalFileChunks)
 
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	var totalWritten int64 = 0
+
 	for i := 0; i < len(tasks); i++ {
+		fmt.Printf("\rDownloaded: %.2f MB", float64(totalWritten)/(1024*1024))
 		tasks[i] = workers.Task{ID: i + 1, ExecFunc: func() {
-			fi.DownloadChunk(i, url)
+			totalWritten += int64(fi.DownloadChunk(i, url))
 		}}
 	}
 
@@ -169,7 +211,7 @@ func (fi *FileInfo) DownloadInChunks(url string) int {
 	return len(chunks) - totalFileChunks
 }
 
-func (fi *FileInfo) DownloadChunk(i int, url string) {
+func (fi *FileInfo) DownloadChunk(i int, url string) int {
 	c := &Chunk{Index: i}
 
 	maxRetries := 3
@@ -193,7 +235,7 @@ func (fi *FileInfo) DownloadChunk(i int, url string) {
 		log.Fatal("Failed to write to file: ", err)
 	}
 
-	fmt.Printf("Chunk %d downloaded - bytes: %d-%d\n", i, c.Start, c.End)
+	return c.End - c.Start
 }
 
 func getFileInfo(url string) (*FileInfo, error) {
@@ -328,8 +370,6 @@ func (f *FileInfo) CreateFile(outDir string) error {
 
 	file, err := os.Create(o)
 	f.File = file
-
-	defer file.Close()
 
 	return err
 }

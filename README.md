@@ -68,8 +68,30 @@ This project is licensed under the MIT License. See the LICENSE file for details
 ### Planned features/stuff
 
 - [ ] resume functionality for resuming download
+  - If ctrl - C save the metadata before closing
   - Save the download info to metadata/temp file
   - Resume the download checking the metadata
+- [ ] implement --wait flag that waits x seconds / minutes / hours between server requests to
+
+wget man page:
+
+```sh
+ -w seconds
+  --wait=seconds
+
+      Wait the specified number of seconds between the retrievals.  Use of this
+      option is recommended, as it lightens the server load by making the
+      requests less frequent.  Instead of in seconds, the time can be specified
+      in minutes using the "m" suffix, in hours using "h" suffix, or in days
+      using "d" suffix.
+
+      Specifying a large value for this option is useful if the network or the
+      destination host is down, so that Wget can wait long enough to reasonably
+      expect the network error to be fixed before the retry.  The waiting
+      interval specified by this function is influenced by "--random-wait", which
+      see.
+```
+
 - [ ] if the URL provided does not link to anything downloadable, return server http response:
   - cookies
   - headers

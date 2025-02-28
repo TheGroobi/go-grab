@@ -11,7 +11,8 @@ import (
 const Version string = "v0.1.0"
 
 var (
-	ChunkSizeMB      int = 1 // 1MB
+	ChunkSizeMB      int    = 8     // 8MB
+	LimitRateMB      string = "30m" // 30 MB
 	AutoDetectChunks bool
 	OutputDir        string
 	Workers          int
@@ -29,8 +30,9 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(downloadCmd)
-	downloadCmd.Flags().IntVarP(&ChunkSizeMB, "chunk-size", "c", ChunkSizeMB, "chunk size for download in mb")
-	downloadCmd.Flags().StringVarP(&OutputDir, "output", "o", files.GetDownloadsDir(), "directory where the file should be downloaded to, defaults to '$HOME/Downloads'")
+	downloadCmd.Flags().IntVarP(&ChunkSizeMB, "chunk-size", "c", ChunkSizeMB, "Chunk size for download in mb. Defaults to 8MB")
+	downloadCmd.Flags().StringVarP(&OutputDir, "output", "o", files.GetDownloadsDir(), "directory where the file should be downloaded to. Defaults to '$HOME/Downloads'")
+	downloadCmd.Flags().StringVarP(&LimitRateMB, "limit-rate", "", LimitRateMB, "Limit the rate of network download speed. Defaults to 30MB")
 }
 
 func Execute() {
